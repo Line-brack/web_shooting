@@ -47,6 +47,8 @@ class GameScene extends Phaser.Scene {
 
     // Player and enemies
     this.playerEntity = new PlayerEntity(this, w / 2, h - 80, this.bulletManager);
+    // Ally (rule-based support) — follows player and fires at enemies
+    this.allyEntity = new AllyEntity(this, w / 2 - 40, h - 120, this.bulletManager, this.playerEntity);
     this.enemies = [];
 
     // Spawn some enemies
@@ -79,6 +81,7 @@ class GameScene extends Phaser.Scene {
 
     // Update entities
     this.playerEntity.update(dt, this.cursors);
+    if (this.allyEntity) this.allyEntity.update(dt);
     for (const e of this.enemies) e.update(dt);
     this.bulletManager.update(dt);
     // Collisions: enemy hit by player bullets
@@ -124,6 +127,8 @@ class GameScene extends Phaser.Scene {
     this.worldGraphics.clear();
     // Player
     this.playerEntity.draw(this.worldGraphics);
+    // Ally
+    if (this.allyEntity) this.allyEntity.draw(this.worldGraphics);
     // Enemies
     for (const e of this.enemies) e.draw(this.worldGraphics);
     // Bullets
@@ -237,7 +242,7 @@ class GameScene extends Phaser.Scene {
 
     const state = {
       player_pos: { x: this.playerEntity.x / w, y: this.playerEntity.y / h },
-      ally_pos: { x: 0.5, y: 0.8 }, // placeholder for now
+      ally_pos: { x: (this.allyEntity ? this.allyEntity.x / w : 0.5), y: (this.allyEntity ? this.allyEntity.y / h : 0.8) },
       nearest_enemies: [], // not implemented in this prototype
       nearest_bullets: nearest,
       player_input_flags: inputFlags
