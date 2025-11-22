@@ -89,8 +89,8 @@ class GameScene extends Phaser.Scene {
       const enemy = this.enemies[ei];
       const nearby = this.bulletManager.queryNearby(enemy.x, enemy.y, 18);
       for (const nb of nearby) {
-        if (nb.meta === 'player') {
-          // destroy bullet and enemy
+        if (nb.meta === 'player' || nb.meta === 'ally') {
+          // destroy bullet and enemy (player or ally bullet)
           this.bulletManager.remove(nb.id);
           this.enemies.splice(ei, 1);
           this.score += 100;
