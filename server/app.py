@@ -58,6 +58,41 @@ def upload_log():
 
     return jsonify({ 'ok': True, 'saved': len(records) })
 
+
+@app.route('/api/upload-hitmap', methods=['POST'])
+def upload_hitmap():
+    # Accept JSON payload { records: [...] } or a JSON array
+    data = None
+    if request.is_json:
+        data = request.get_json()
+    else:
+        raw = request.data
+        if not raw:
+            return jsonify({ 'ok': False, 'error': 'empty_body' }), 400
+        try:
+            data = json.loads(raw.decode('utf-8'))
+        except Exception as e:
+            return jsonify({ 'ok': False, 'error': 'invalid_json', 'detail': str(e) }), 400
+
+    records = []
+    if isinstance(data, dict) and 'records' in data and isinstance(data['records'], list):
+        records = data['records']
+    elif isinstance(data, list):
+        records = data
+    else:
+        return jsonify({ 'ok': False, 'error': 'unexpected_format' }), 400
+
+    fname = 'hitmap-' + datetime.datetime.utcnow().strftime('%Y%m%d') + '.log'
+    path = os.path.join(LOG_DIR, fname)
+    try:
+        with open(path, 'a', encoding='utf-8') as f:
+            for r in records:
+                f.write(json.dumps(r, ensure_ascii=False) + '\n')
+    except Exception as e:
+        return jsonify({ 'ok': False, 'error': 'write_failed', 'detail': str(e) }), 500
+
+    return jsonify({ 'ok': True, 'saved': len(records) })
+
 if __name__ == '__main__':
     # Development server, do not use in production
     app.run(host='0.0.0.0', port=5000, debug=True)

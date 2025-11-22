@@ -34,6 +34,13 @@ class GameScene extends Phaser.Scene {
     // Hitmap recorder
     this.hitmapRecorder = new HitmapRecorder();
 
+    // Start automatic flush of hitmap to server (60s interval)
+    try {
+      this.hitmapRecorder.startAutoFlush(60000);
+    } catch (e) {
+      console.warn('Failed to start HitmapRecorder auto-flush', e);
+    }
+
     // Logger throttle (debug mode only)
     this._logAccumulator = 0; // ms
     this._logInterval = 100; // ms -> 10Hz
@@ -163,7 +170,47 @@ class GameScene extends Phaser.Scene {
         this.debugGraphics.fillStyle(0xffff00, 1);
         this.debugGraphics.fillCircle(bx, by, 6);
       }
+      // Draw hitmap overlay
+      this.drawHitmapOverlay();
     }
+  }
+
+  drawHitmapOverlay() {
+    const gfx = this.debugGraphics;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    // grid cell size
+    const cell = 40;
+    const cols = Math.ceil(w / cell);
+    const rows = Math.ceil(h / cell);
+    // accumulate counts
+    const counts = new Array(cols * rows).fill(0);
+    for (const hit of this.hitmapRecorder.hits) {
+      const x = Math.floor(hit.x / cell);
+      const y = Math.floor(hit.y / cell);
+      if (x >= 0 && x < cols && y >= 0 && y < rows) counts[y * cols + x]++;
+    }
+    const maxCount = counts.reduce((a, b) => Math.max(a, b), 0) || 1;
+
+    // Draw semi-transparent heat tiles
+    for (let ry = 0; ry < rows; ry++) {
+      for (let rx = 0; rx < cols; rx++) {
+        const c = counts[ry * cols + rx];
+        if (c <= 0) continue;
+        const intensity = Math.min(1, c / maxCount);
+        // color ramp from transparent -> yellow -> red
+        const r = Math.floor(255 * intensity);
+        const g = Math.floor(120 * (1 - intensity));
+        const a = 0.35 * intensity;
+        gfx.fillStyle((r << 16) | (g << 8) | 0x00, a);
+        gfx.fillRect(rx * cell, ry * cell, cell, cell);
+      }
+    }
+
+    // Legend: show max count
+    this.debugGraphics.fillStyle(0x000000, 0.6);
+    this.debugGraphics.fillRect(w - 140, 12, 128, 40);
+    this.add.text(w - 136, 16, `Heat max: ${maxCount}`, { fontFamily: 'monospace', fontSize: '12px', color: '#fff' }).setDepth(60);
   }
 
   collectState() {
