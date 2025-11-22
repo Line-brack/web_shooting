@@ -123,6 +123,29 @@ class GameScene extends Phaser.Scene {
       }
     }
 
+    // Collisions: ally hit by enemy bullets (ally has HP and dies after 3 hits)
+    if (this.allyEntity) {
+      const aNearby = this.bulletManager.queryNearby(this.allyEntity.x, this.allyEntity.y, 14);
+      for (const nb of aNearby) {
+        if (nb.meta === 'enemy') {
+          this.bulletManager.remove(nb.id);
+          // call ally.takeHit(); if returns true -> ally dies
+          try {
+            const dead = this.allyEntity.takeHit ? this.allyEntity.takeHit() : true;
+            if (dead) {
+              // remove ally from scene
+              this.allyEntity = null;
+              // optional: small visual effect - a score or message could be added here
+            }
+          } catch (e) {
+            // fallback: remove ally if error
+            this.allyEntity = null;
+          }
+          break;
+        }
+      }
+    }
+
     // Draw world
     this.worldGraphics.clear();
     // Player

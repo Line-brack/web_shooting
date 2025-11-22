@@ -8,6 +8,23 @@ class AllyEntity {
     this.movement = new MovementComponent(this, 220);
     this.shootTimer = 0.5; // seconds between support shots
     this.followOffset = { x: -40, y: 20 }; // relative to player
+    this.maxHp = 3;
+    this.hp = this.maxHp;
+  }
+
+  takeHit() {
+    this.hp -= 1;
+    // small flash effect
+    try {
+      const scene = this.scene;
+      scene.tweens.addCounter({ from: 0, to: 100, duration: 160, onUpdate: (t) => {
+        const v = Math.floor(t.getValue());
+        this._tint = (v % 2 === 0) ? 0x66ccff : 0xffaaaa;
+      }, onComplete: () => { this._tint = null; } });
+    } catch (e) {
+      // ignore if tweening not available
+    }
+    return this.hp <= 0;
   }
 
   update(dt) {
@@ -46,7 +63,8 @@ class AllyEntity {
 
   draw(graphics) {
     // simple triangular ally
-    graphics.fillStyle(0x66ccff, 1);
+    const color = this._tint !== undefined && this._tint !== null ? this._tint : 0x66ccff;
+    graphics.fillStyle(color, 1);
     graphics.fillTriangle(this.x - 8, this.y + 8, this.x + 8, this.y + 8, this.x, this.y - 10);
   }
 }
