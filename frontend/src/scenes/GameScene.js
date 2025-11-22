@@ -13,46 +13,37 @@ class GameScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
 
-    // Player representation
-    this.player = {
-      x: w / 2,
-      y: h - 80,
-      speed: 300
-    };
-
     // Input
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keyD = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
 
-    // Bullets (simple array for prototype)
-    this.bullets = [];
-
-    // Create graphics layers
+    // Managers
     this.worldGraphics = this.add.graphics();
     this.debugGraphics = this.add.graphics();
-
-    // Debug JSON overlay element in DOM
     this.debugTextEl = document.getElementById('debug-json');
 
-    // Spawn bullets periodically
-    this.time.addEvent({
-      delay: 400,
-      loop: true,
-      callback: () => this.spawnBullet()
-    });
+    // Bullet manager + spatial
+    this.bulletManager = new BulletManager(this);
 
-    // Initial bullets
-    for (let i = 0; i < 8; i++) this.spawnBullet(true);
+    // Player and enemies
+    this.playerEntity = new PlayerEntity(this, w / 2, h - 80, this.bulletManager);
+    this.enemies = [];
+
+    // Spawn some enemies
+    for (let i = 0; i < 5; i++) {
+      const ex = 80 + i * 120;
+      const ey = 80 + Phaser.Math.Between(-40, 40);
+      this.enemies.push(new EnemyEntity(this, ex, ey, this.bulletManager));
+    }
   }
 
   spawnBullet(randomX = false) {
     const w = this.scale.width;
-    const h = this.scale.height;
     const x = randomX ? Phaser.Math.Between(40, w - 40) : Phaser.Math.Between(0, w);
     const y = -10;
     const vx = Phaser.Math.FloatBetween(-30, 30);
     const vy = Phaser.Math.FloatBetween(80, 160);
-    this.bullets.push({ x, y, vx, vy });
+    this.bulletManager.spawn(x, y, vx, vy);
   }
 
   update(time, delta) {
@@ -66,33 +57,19 @@ class GameScene extends Phaser.Scene {
       this.debugTextEl.style.display = this.debugMode ? 'block' : 'none';
     }
 
-    // Player movement
-    if (this.cursors.left.isDown) this.player.x -= this.player.speed * dt;
-    if (this.cursors.right.isDown) this.player.x += this.player.speed * dt;
-    if (this.cursors.up.isDown) this.player.y -= this.player.speed * dt;
-    if (this.cursors.down.isDown) this.player.y += this.player.speed * dt;
-
-    // Clamp
-    this.player.x = Phaser.Math.Clamp(this.player.x, 20, w - 20);
-    this.player.y = Phaser.Math.Clamp(this.player.y, 20, h - 20);
-
-    // Update bullets
-    for (let i = this.bullets.length - 1; i >= 0; i--) {
-      const b = this.bullets[i];
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-      // remove off-screen
-      if (b.y > h + 50 || b.x < -50 || b.x > w + 50) this.bullets.splice(i, 1);
-    }
+    // Update entities
+    this.playerEntity.update(dt, this.cursors);
+    for (const e of this.enemies) e.update(dt);
+    this.bulletManager.update(dt);
 
     // Draw world
     this.worldGraphics.clear();
     // Player
-    this.worldGraphics.fillStyle(0x00ff00, 1);
-    this.worldGraphics.fillCircle(this.player.x, this.player.y, 8);
+    this.playerEntity.draw(this.worldGraphics);
+    // Enemies
+    for (const e of this.enemies) e.draw(this.worldGraphics);
     // Bullets
-    this.worldGraphics.fillStyle(0xff4444, 1);
-    for (const b of this.bullets) this.worldGraphics.fillCircle(b.x, b.y, 5);
+    this.bulletManager.draw(this.worldGraphics);
 
     // Debug overlay: StateCollector & visualize nearest bullet
     this.debugGraphics.clear();
@@ -108,7 +85,7 @@ class GameScene extends Phaser.Scene {
         const by = nb.y * h;
         this.debugGraphics.lineStyle(2, 0xffff00, 1);
         this.debugGraphics.beginPath();
-        this.debugGraphics.moveTo(this.player.x, this.player.y);
+        this.debugGraphics.moveTo(this.playerEntity.x, this.playerEntity.y);
         this.debugGraphics.lineTo(bx, by);
         this.debugGraphics.closePath();
         this.debugGraphics.strokePath();
