@@ -1,0 +1,4 @@
+Flask>=2.0
+# Optional: add tensorflow, numpy when training is needed
+# tensorflow
+# numpy
