@@ -1,0 +1,294 @@
+class GameScene extends Phaser.Scene {
+  constructor() {
+    super({ key: 'GameScene' });
+    this.debugMode = false;
+    this.debugTextEl = null;
+  }
+
+  preload() {
+    // No external assets yet; using Graphics for simple shapes.
+  }
+
+  create() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+
+    // Input
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.keyD = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+
+    // Managers
+    this.worldGraphics = this.add.graphics();
+    this.debugGraphics = this.add.graphics();
+    this.debugTextEl = document.getElementById('debug-json');
+
+    // Bullet manager + spatial
+    this.bulletManager = new BulletManager(this);
+
+    // HUD
+    this.score = 0;
+    this.lives = 3;
+    this.scoreText = this.add.text(12, 12, 'Score: 0', { fontFamily: 'monospace', fontSize: '16px', color: '#fff' }).setDepth(50);
+    this.livesText = this.add.text(12, 34, 'Lives: 3', { fontFamily: 'monospace', fontSize: '16px', color: '#fff' }).setDepth(50);
+    // Ally HP text (hidden if no ally)
+    this.allyHpText = this.add.text(12, 56, 'Ally: -', { fontFamily: 'monospace', fontSize: '16px', color: '#9fd' }).setDepth(50);
+
+    // Hitmap recorder
+    this.hitmapRecorder = new HitmapRecorder();
+
+    // Start automatic flush of hitmap to server (60s interval)
+    try {
+      this.hitmapRecorder.startAutoFlush(60000);
+    } catch (e) {
+      console.warn('Failed to start HitmapRecorder auto-flush', e);
+    }
+
+    // Logger throttle (debug mode only)
+    this._logAccumulator = 0; // ms
+    this._logInterval = 100; // ms -> 10Hz
+
+    // Player and enemies
+    this.playerEntity = new PlayerEntity(this, w / 2, h - 80, this.bulletManager);
+    // Ally (rule-based support) — follows player and fires at enemies
+    this.allyEntity = new AllyEntity(this, w / 2 - 40, h - 120, this.bulletManager, this.playerEntity);
+    this.enemies = [];
+
+    // Spawn some enemies
+    for (let i = 0; i < 5; i++) {
+      const ex = 80 + i * 120;
+      const ey = 80 + Phaser.Math.Between(-40, 40);
+      this.enemies.push(new EnemyEntity(this, ex, ey, this.bulletManager));
+    }
+  }
+
+  spawnBullet(randomX = false) {
+    const w = this.scale.width;
+    const x = randomX ? Phaser.Math.Between(40, w - 40) : Phaser.Math.Between(0, w);
+    const y = -10;
+    const vx = Phaser.Math.FloatBetween(-30, 30);
+    const vy = Phaser.Math.FloatBetween(80, 160);
+    this.bulletManager.spawn(x, y, vx, vy);
+  }
+
+  update(time, delta) {
+    const dt = delta / 1000;
+    const w = this.scale.width;
+    const h = this.scale.height;
+
+    // Toggle debug mode on key press (on down)
+    if (Phaser.Input.Keyboard.JustDown(this.keyD)) {
+      this.debugMode = !this.debugMode;
+      this.debugTextEl.style.display = this.debugMode ? 'block' : 'none';
+    }
+
+    // Update entities
+    this.playerEntity.update(dt, this.cursors);
+    if (this.allyEntity) this.allyEntity.update(dt);
+    for (const e of this.enemies) e.update(dt);
+    this.bulletManager.update(dt);
+    // Collisions: enemy hit by player bullets
+    for (let ei = this.enemies.length - 1; ei >= 0; ei--) {
+      const enemy = this.enemies[ei];
+      const nearby = this.bulletManager.queryNearby(enemy.x, enemy.y, 18);
+      for (const nb of nearby) {
+        if (nb.meta === 'player' || nb.meta === 'ally') {
+          // destroy bullet and enemy (player or ally bullet)
+          this.bulletManager.remove(nb.id);
+          this.enemies.splice(ei, 1);
+          this.score += 100;
+          this.scoreText.setText(`Score: ${this.score}`);
+          break;
+        }
+      }
+    }
+
+    // Collisions: player hit by enemy bullets
+    const pNearby = this.bulletManager.queryNearby(this.playerEntity.x, this.playerEntity.y, 16);
+    for (const nb of pNearby) {
+      if (nb.meta === 'enemy') {
+        this.bulletManager.remove(nb.id);
+        this.lives -= 1;
+        this.livesText.setText(`Lives: ${this.lives}`);
+        // record hit coordinate to hitmap
+        this.hitmapRecorder.record(nb.x, nb.y);
+        // simple player flash
+        this.tweens.addCounter({ from: 0, to: 100, duration: 120, onUpdate: (tween) => {
+          const v = Math.floor(tween.getValue());
+          this.playerEntityTint = (v % 2 === 0) ? 0xffffff : 0xffaaaa;
+        }});
+        if (this.lives <= 0) {
+          // game over - simple restart
+          this.scene.restart();
+          return;
+        }
+        break;
+      }
+    }
+
+    // Collisions: ally hit by enemy bullets (ally has HP and dies after 3 hits)
+    if (this.allyEntity) {
+      const aNearby = this.bulletManager.queryNearby(this.allyEntity.x, this.allyEntity.y, 14);
+      for (const nb of aNearby) {
+        if (nb.meta === 'enemy') {
+          this.bulletManager.remove(nb.id);
+          // call ally.takeHit(); if returns true -> ally dies
+          try {
+            const dead = this.allyEntity.takeHit ? this.allyEntity.takeHit() : true;
+            if (dead) {
+              // remove ally from scene
+              this.allyEntity = null;
+              // optional: small visual effect - a score or message could be added here
+            }
+          } catch (e) {
+            // fallback: remove ally if error
+            this.allyEntity = null;
+          }
+          break;
+        }
+      }
+    }
+
+    // Update ally HP HUD
+    if (this.allyEntity) {
+      if (typeof this.allyEntity.hp === 'number') {
+        this.allyHpText.setText(`Ally: ${this.allyEntity.hp}/${this.allyEntity.maxHp}`);
+      } else {
+        this.allyHpText.setText('Ally: ?');
+      }
+    } else {
+      this.allyHpText.setText('Ally: -');
+    }
+
+    // Draw world
+    this.worldGraphics.clear();
+    // Player
+    this.playerEntity.draw(this.worldGraphics);
+    // Ally
+    if (this.allyEntity) this.allyEntity.draw(this.worldGraphics);
+    // Enemies
+    for (const e of this.enemies) e.draw(this.worldGraphics);
+    // Bullets
+    this.bulletManager.draw(this.worldGraphics);
+
+    // Debug overlay: StateCollector & visualize nearest bullet
+    this.debugGraphics.clear();
+    if (this.debugMode) {
+      // accumulate time and only send at the configured interval to avoid overload
+      this._logAccumulator += delta;
+      let state = null;
+      if (this._logAccumulator >= this._logInterval) {
+        this._logAccumulator = 0;
+        state = this.collectState();
+        // Show JSON text
+        this.debugTextEl.textContent = JSON.stringify(state, null, 2);
+
+        // Send to logger if available (batched, sendBeacon/fetch handled by GameLogger)
+        try {
+          if (window.GameLogger && typeof window.GameLogger.enqueue === 'function') {
+            window.GameLogger.enqueue(state);
+          }
+        } catch (e) {
+          // ignore logging errors in-game
+        }
+      } else {
+        // still show the last state if available (avoid calling collectState each frame)
+        state = this.collectState();
+        this.debugTextEl.textContent = JSON.stringify(state, null, 2);
+      }
+
+      // Draw line to nearest bullet
+      if (state && state.nearest_bullets && state.nearest_bullets.length > 0) {
+        const nb = state.nearest_bullets[0];
+        const bx = nb.x * w;
+        const by = nb.y * h;
+        this.debugGraphics.lineStyle(2, 0xffff00, 1);
+        this.debugGraphics.beginPath();
+        this.debugGraphics.moveTo(this.playerEntity.x, this.playerEntity.y);
+        this.debugGraphics.lineTo(bx, by);
+        this.debugGraphics.closePath();
+        this.debugGraphics.strokePath();
+        // mark nearest bullet
+        this.debugGraphics.fillStyle(0xffff00, 1);
+        this.debugGraphics.fillCircle(bx, by, 6);
+      }
+      // Draw hitmap overlay
+      this.drawHitmapOverlay();
+    }
+  }
+
+  drawHitmapOverlay() {
+    const gfx = this.debugGraphics;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    // grid cell size
+    const cell = 40;
+    const cols = Math.ceil(w / cell);
+    const rows = Math.ceil(h / cell);
+    // accumulate counts
+    const counts = new Array(cols * rows).fill(0);
+    for (const hit of this.hitmapRecorder.hits) {
+      const x = Math.floor(hit.x / cell);
+      const y = Math.floor(hit.y / cell);
+      if (x >= 0 && x < cols && y >= 0 && y < rows) counts[y * cols + x]++;
+    }
+    const maxCount = counts.reduce((a, b) => Math.max(a, b), 0) || 1;
+
+    // Draw semi-transparent heat tiles
+    for (let ry = 0; ry < rows; ry++) {
+      for (let rx = 0; rx < cols; rx++) {
+        const c = counts[ry * cols + rx];
+        if (c <= 0) continue;
+        const intensity = Math.min(1, c / maxCount);
+        // color ramp from transparent -> yellow -> red
+        const r = Math.floor(255 * intensity);
+        const g = Math.floor(120 * (1 - intensity));
+        const a = 0.35 * intensity;
+        gfx.fillStyle((r << 16) | (g << 8) | 0x00, a);
+        gfx.fillRect(rx * cell, ry * cell, cell, cell);
+      }
+    }
+
+    // Legend: show max count
+    this.debugGraphics.fillStyle(0x000000, 0.6);
+    this.debugGraphics.fillRect(w - 140, 12, 128, 40);
+    this.add.text(w - 136, 16, `Heat max: ${maxCount}`, { fontFamily: 'monospace', fontSize: '12px', color: '#fff' }).setDepth(60);
+  }
+
+  collectState() {
+    // Minimal StateCollector for prototype (normalizes by width/height)
+    const w = this.scale.width;
+    const h = this.scale.height;
+
+    // Nearest bullets (by distance) - only consider enemy bullets for avoidance
+    const allBullets = Array.from(this.bulletManager.bullets.values())
+      .filter(b => b.meta === 'enemy')
+      .map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy, meta: b.meta }));
+    allBullets.sort((a, b) => {
+      const da = Phaser.Math.Distance.Between(a.x, a.y, this.playerEntity.x, this.playerEntity.y);
+      const db = Phaser.Math.Distance.Between(b.x, b.y, this.playerEntity.x, this.playerEntity.y);
+      return da - db;
+    });
+    const nearest = allBullets.slice(0, 5).map(b => ({ x: b.x / w, y: b.y / h, vx: b.vx / 200, vy: b.vy / 200, meta: b.meta }));
+
+    // Player input flags (simple)
+    const inputFlags = {
+      left: !!this.cursors.left.isDown,
+      right: !!this.cursors.right.isDown,
+      up: !!this.cursors.up.isDown,
+      down: !!this.cursors.down.isDown
+    };
+
+    const state = {
+      player_pos: { x: this.playerEntity.x / w, y: this.playerEntity.y / h },
+      ally_pos: { x: (this.allyEntity ? this.allyEntity.x / w : 0.5), y: (this.allyEntity ? this.allyEntity.y / h : 0.8) },
+      nearest_enemies: [], // not implemented in this prototype
+      nearest_bullets: nearest,
+      player_input_flags: inputFlags
+    };
+
+    return state;
+  }
+}
+
+// Expose to global for index.html loader
+window.GameScene = GameScene;
