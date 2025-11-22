@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Hitmap Viewer</title>
+  <style>
+    body{margin:0;background:#111;color:#fff;font-family:monospace}
+    #controls{padding:8px}
+    #canvas{display:block;margin:8px auto;border:1px solid #333}
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button id="reload">Reload Data</button>
+    Cell size: <input id="cell" type="number" value="40" min="4" max="200" style="width:64px">
+    <span id="info"></span>
+  </div>
+  <canvas id="canvas" width="800" height="600"></canvas>
+  <script>
+    async function loadAndDraw(){
+      const info = document.getElementById('info');
+      info.textContent = ' Loading...';
+      try{
+        const res = await fetch('/api/hitmap-data');
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        const hits = await res.json();
+        info.textContent = ' Records: '+hits.length;
+        drawHits(hits);
+      }catch(e){
+        info.textContent = ' Error: '+e.message;
+      }
+    }
+
+    function drawHits(hits){
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width, h = canvas.height;
+      const cell = Math.max(4, parseInt(document.getElementById('cell').value)||40);
+      const cols = Math.ceil(w / cell), rows = Math.ceil(h / cell);
+      const counts = new Array(cols * rows).fill(0);
+      for(const hit of hits){
+        const x = Math.floor(hit.x / cell);
+        const y = Math.floor(hit.y / cell);
+        if(x>=0 && x<cols && y>=0 && y<rows) counts[y*cols + x]++;
+      }
+      const maxCount = counts.reduce((a,b)=>Math.max(a,b),0) || 1;
+      ctx.clearRect(0,0,w,h);
+      for(let ry=0; ry<rows; ry++){
+        for(let rx=0; rx<cols; rx++){
+          const c = counts[ry*cols + rx];
+          if(c<=0) continue;
+          const intensity = Math.min(1, c / maxCount);
+          const r = Math.floor(255 * intensity);
+          const g = Math.floor(120 * (1-intensity));
+          const a = 0.35 * intensity;
+          ctx.fillStyle = 'rgba(' + r + ',' + g + ',0,' + a + ')';
+          ctx.fillRect(rx*cell, ry*cell, cell, cell);
+        }
+      }
+      // legend
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(w-170,12,158,60);
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px monospace';
+      ctx.fillText('Heat max: '+maxCount, w-162, 28);
+      ctx.fillText('Cells: '+cols+'x'+rows, w-162, 44);
+      ctx.fillText('Records: '+hits.length, w-162, 60);
+    }
+
+    document.getElementById('reload').addEventListener('click', loadAndDraw);
+    document.getElementById('cell').addEventListener('change', ()=> loadAndDraw());
+
+    loadAndDraw();
+  </script>
+</body>
+</html>

@@ -6,6 +6,8 @@ except Exception:
 import os
 import datetime
 import json
+import glob
+from flask import Response, send_from_directory
 
 app = Flask(__name__)
 if CORS:
@@ -92,6 +94,41 @@ def upload_hitmap():
         return jsonify({ 'ok': False, 'error': 'write_failed', 'detail': str(e) }), 500
 
     return jsonify({ 'ok': True, 'saved': len(records) })
+
+
+def _load_all_hitmap_records():
+        files = sorted(glob.glob(os.path.join(LOG_DIR, 'hitmap-*.log')))
+        records = []
+        for path in files:
+                try:
+                        with open(path, 'r', encoding='utf-8') as fh:
+                                for line in fh:
+                                        line = line.strip()
+                                        if not line:
+                                                continue
+                                        try:
+                                                records.append(json.loads(line))
+                                        except Exception:
+                                                continue
+                except Exception:
+                        continue
+        return records
+
+
+@app.route('/api/hitmap-data', methods=['GET'])
+def api_hitmap_data():
+    """Return aggregated hit records as JSON. Limits to the most recent 5000 records."""
+    records = _load_all_hitmap_records()
+    if len(records) > 5000:
+        records = records[-5000:]
+    return jsonify(records)
+
+
+@app.route('/hitmap', methods=['GET'])
+def hitmap_static():
+    """Serve the static hitmap viewer HTML located in ./static/hitmap.html."""
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    return send_from_directory(static_dir, 'hitmap.html')
 
 if __name__ == '__main__':
     # Development server, do not use in production
