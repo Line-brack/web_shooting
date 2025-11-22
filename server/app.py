@@ -1,9 +1,24 @@
 from flask import Flask, request, jsonify
+try:
+    from flask_cors import CORS
+except Exception:
+    CORS = None
 import os
 import datetime
 import json
 
 app = Flask(__name__)
+if CORS:
+    # allow cross-origin requests from common local dev origins and enable credentials
+    # When credentials are used, Access-Control-Allow-Origin must be the request origin (not '*').
+    CORS(app, supports_credentials=True,
+         resources={r"/api/*": {"origins": [
+             "http://127.0.0.1:5500",
+             "http://localhost:5500",
+             "http://127.0.0.1:8000",
+             "http://localhost:8000",
+             "http://localhost:5000"
+         ]}})
 
 LOG_DIR = os.path.join(os.path.dirname(__file__), 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)

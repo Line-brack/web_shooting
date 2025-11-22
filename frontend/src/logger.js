@@ -1,7 +1,8 @@
 (function(){
   class GameLogger {
     constructor() {
-      this.endpoint = '/api/upload-log';
+      // default to backend Flask server on localhost:5000 to avoid hitting static dev servers
+      this.endpoint = 'http://localhost:5000/api/upload-log';
       this.batchSize = 20;
       this.flushInterval = 5000; // ms
       this.buffer = [];

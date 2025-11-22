@@ -34,6 +34,10 @@ class GameScene extends Phaser.Scene {
     // Hitmap recorder
     this.hitmapRecorder = new HitmapRecorder();
 
+    // Logger throttle (debug mode only)
+    this._logAccumulator = 0; // ms
+    this._logInterval = 100; // ms -> 10Hz
+
     // Player and enemies
     this.playerEntity = new PlayerEntity(this, w / 2, h - 80, this.bulletManager);
     this.enemies = [];
@@ -121,12 +125,31 @@ class GameScene extends Phaser.Scene {
     // Debug overlay: StateCollector & visualize nearest bullet
     this.debugGraphics.clear();
     if (this.debugMode) {
-      const state = this.collectState();
-      // Show JSON text
-      this.debugTextEl.textContent = JSON.stringify(state, null, 2);
+      // accumulate time and only send at the configured interval to avoid overload
+      this._logAccumulator += delta;
+      let state = null;
+      if (this._logAccumulator >= this._logInterval) {
+        this._logAccumulator = 0;
+        state = this.collectState();
+        // Show JSON text
+        this.debugTextEl.textContent = JSON.stringify(state, null, 2);
+
+        // Send to logger if available (batched, sendBeacon/fetch handled by GameLogger)
+        try {
+          if (window.GameLogger && typeof window.GameLogger.enqueue === 'function') {
+            window.GameLogger.enqueue(state);
+          }
+        } catch (e) {
+          // ignore logging errors in-game
+        }
+      } else {
+        // still show the last state if available (avoid calling collectState each frame)
+        state = this.collectState();
+        this.debugTextEl.textContent = JSON.stringify(state, null, 2);
+      }
 
       // Draw line to nearest bullet
-      if (state.nearest_bullets && state.nearest_bullets.length > 0) {
+      if (state && state.nearest_bullets && state.nearest_bullets.length > 0) {
         const nb = state.nearest_bullets[0];
         const bx = nb.x * w;
         const by = nb.y * h;
