@@ -30,6 +30,8 @@ class GameScene extends Phaser.Scene {
     this.lives = 3;
     this.scoreText = this.add.text(12, 12, 'Score: 0', { fontFamily: 'monospace', fontSize: '16px', color: '#fff' }).setDepth(50);
     this.livesText = this.add.text(12, 34, 'Lives: 3', { fontFamily: 'monospace', fontSize: '16px', color: '#fff' }).setDepth(50);
+    // Ally HP text (hidden if no ally)
+    this.allyHpText = this.add.text(12, 56, 'Ally: -', { fontFamily: 'monospace', fontSize: '16px', color: '#9fd' }).setDepth(50);
 
     // Hitmap recorder
     this.hitmapRecorder = new HitmapRecorder();
@@ -146,6 +148,17 @@ class GameScene extends Phaser.Scene {
       }
     }
 
+    // Update ally HP HUD
+    if (this.allyEntity) {
+      if (typeof this.allyEntity.hp === 'number') {
+        this.allyHpText.setText(`Ally: ${this.allyEntity.hp}/${this.allyEntity.maxHp}`);
+      } else {
+        this.allyHpText.setText('Ally: ?');
+      }
+    } else {
+      this.allyHpText.setText('Ally: -');
+    }
+
     // Draw world
     this.worldGraphics.clear();
     // Player
@@ -246,8 +259,10 @@ class GameScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
 
-    // Nearest bullets (by distance) - use BulletManager storage
-    const allBullets = Array.from(this.bulletManager.bullets.values()).map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy, meta: b.meta }));
+    // Nearest bullets (by distance) - only consider enemy bullets for avoidance
+    const allBullets = Array.from(this.bulletManager.bullets.values())
+      .filter(b => b.meta === 'enemy')
+      .map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy, meta: b.meta }));
     allBullets.sort((a, b) => {
       const da = Phaser.Math.Distance.Between(a.x, a.y, this.playerEntity.x, this.playerEntity.y);
       const db = Phaser.Math.Distance.Between(b.x, b.y, this.playerEntity.x, this.playerEntity.y);
