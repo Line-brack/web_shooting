@@ -6,10 +6,10 @@ class BulletManager {
     this.spatial = new SpatialHash(96);
   }
 
-  spawn(x, y, vx, vy) {
+  spawn(x, y, vx, vy, meta = null) {
     const id = this.nextId++;
-    this.bullets.set(id, { x, y, vx, vy });
-    this.spatial.insert(id, x, y, null);
+    this.bullets.set(id, { x, y, vx, vy, meta });
+    this.spatial.insert(id, x, y, meta);
     return id;
   }
 
@@ -33,14 +33,20 @@ class BulletManager {
   }
 
   draw(graphics) {
-    graphics.fillStyle(0xff4444, 1);
     for (const b of this.bullets.values()) {
+      // color by owner meta
+      if (b.meta === 'player') graphics.fillStyle(0x66ff66, 1);
+      else if (b.meta === 'enemy') graphics.fillStyle(0xff6666, 1);
+      else graphics.fillStyle(0xff4444, 1);
       graphics.fillCircle(b.x, b.y, 5);
     }
   }
 
   queryNearby(x, y, radius) {
-    return this.spatial.queryRadius(x, y, radius).map(r => ({ id: r.id, x: r.x, y: r.y }));
+    return this.spatial.queryRadius(x, y, radius).map(r => {
+      const b = this.bullets.get(r.id);
+      return { id: r.id, x: r.x, y: r.y, meta: b ? b.meta : null };
+    });
   }
 }
 

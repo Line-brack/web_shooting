@@ -20,7 +20,7 @@ class EnemyEntity {
     this.shootTimer -= dt;
     if (this.shootTimer <= 0) {
       // shoot downwards
-      this.bulletManager.spawn(this.x, this.y + 8, 0, 180);
+      this.bulletManager.spawn(this.x, this.y + 8, 0, 180, 'enemy');
       this.shootTimer = Phaser.Math.FloatBetween(0.6, 1.5);
     }
   }

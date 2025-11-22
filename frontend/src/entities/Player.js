@@ -26,7 +26,7 @@ class PlayerEntity {
     // auto-fire for prototype
     this.shootTimer -= dt;
     if (this.shootTimer <= 0) {
-      this.bulletManager.spawn(this.x, this.y - 12, 0, -300);
+      this.bulletManager.spawn(this.x, this.y - 12, 0, -300, 'player');
       this.shootTimer = 0.18;
     }
   }

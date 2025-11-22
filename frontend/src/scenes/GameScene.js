@@ -25,6 +25,15 @@ class GameScene extends Phaser.Scene {
     // Bullet manager + spatial
     this.bulletManager = new BulletManager(this);
 
+    // HUD
+    this.score = 0;
+    this.lives = 3;
+    this.scoreText = this.add.text(12, 12, 'Score: 0', { fontFamily: 'monospace', fontSize: '16px', color: '#fff' }).setDepth(50);
+    this.livesText = this.add.text(12, 34, 'Lives: 3', { fontFamily: 'monospace', fontSize: '16px', color: '#fff' }).setDepth(50);
+
+    // Hitmap recorder
+    this.hitmapRecorder = new HitmapRecorder();
+
     // Player and enemies
     this.playerEntity = new PlayerEntity(this, w / 2, h - 80, this.bulletManager);
     this.enemies = [];
@@ -61,6 +70,44 @@ class GameScene extends Phaser.Scene {
     this.playerEntity.update(dt, this.cursors);
     for (const e of this.enemies) e.update(dt);
     this.bulletManager.update(dt);
+    // Collisions: enemy hit by player bullets
+    for (let ei = this.enemies.length - 1; ei >= 0; ei--) {
+      const enemy = this.enemies[ei];
+      const nearby = this.bulletManager.queryNearby(enemy.x, enemy.y, 18);
+      for (const nb of nearby) {
+        if (nb.meta === 'player') {
+          // destroy bullet and enemy
+          this.bulletManager.remove(nb.id);
+          this.enemies.splice(ei, 1);
+          this.score += 100;
+          this.scoreText.setText(`Score: ${this.score}`);
+          break;
+        }
+      }
+    }
+
+    // Collisions: player hit by enemy bullets
+    const pNearby = this.bulletManager.queryNearby(this.playerEntity.x, this.playerEntity.y, 16);
+    for (const nb of pNearby) {
+      if (nb.meta === 'enemy') {
+        this.bulletManager.remove(nb.id);
+        this.lives -= 1;
+        this.livesText.setText(`Lives: ${this.lives}`);
+        // record hit coordinate to hitmap
+        this.hitmapRecorder.record(nb.x, nb.y);
+        // simple player flash
+        this.tweens.addCounter({ from: 0, to: 100, duration: 120, onUpdate: (tween) => {
+          const v = Math.floor(tween.getValue());
+          this.playerEntityTint = (v % 2 === 0) ? 0xffffff : 0xffaaaa;
+        }});
+        if (this.lives <= 0) {
+          // game over - simple restart
+          this.scene.restart();
+          return;
+        }
+        break;
+      }
+    }
 
     // Draw world
     this.worldGraphics.clear();
@@ -101,14 +148,14 @@ class GameScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
 
-    // Nearest bullets (by distance)
-    const arr = this.bullets.map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy }));
-    arr.sort((a, b) => {
-      const da = Phaser.Math.Distance.Between(a.x, a.y, this.player.x, this.player.y);
-      const db = Phaser.Math.Distance.Between(b.x, b.y, this.player.x, this.player.y);
+    // Nearest bullets (by distance) - use BulletManager storage
+    const allBullets = Array.from(this.bulletManager.bullets.values()).map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy, meta: b.meta }));
+    allBullets.sort((a, b) => {
+      const da = Phaser.Math.Distance.Between(a.x, a.y, this.playerEntity.x, this.playerEntity.y);
+      const db = Phaser.Math.Distance.Between(b.x, b.y, this.playerEntity.x, this.playerEntity.y);
       return da - db;
     });
-    const nearest = arr.slice(0, 5).map(b => ({ x: b.x / w, y: b.y / h, vx: b.vx / 200, vy: b.vy / 200 }));
+    const nearest = allBullets.slice(0, 5).map(b => ({ x: b.x / w, y: b.y / h, vx: b.vx / 200, vy: b.vy / 200, meta: b.meta }));
 
     // Player input flags (simple)
     const inputFlags = {
@@ -119,7 +166,7 @@ class GameScene extends Phaser.Scene {
     };
 
     const state = {
-      player_pos: { x: this.player.x / w, y: this.player.y / h },
+      player_pos: { x: this.playerEntity.x / w, y: this.playerEntity.y / h },
       ally_pos: { x: 0.5, y: 0.8 }, // placeholder for now
       nearest_enemies: [], // not implemented in this prototype
       nearest_bullets: nearest,
